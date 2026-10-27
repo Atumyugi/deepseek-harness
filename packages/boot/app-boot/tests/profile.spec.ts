@@ -346,34 +346,88 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
   })
 
-  it('normalizes only the exact installation-owned headless bundle tuple', () => {
+  it('normalizes a legacy installation-owned tuple and records what it shipped', () => {
     const anchor = stageInstallation({
       '@deepseek-ai/dsh-base': { patch: '[]\n' },
       '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
       '@deepseek-ai/dsh-headless': { patch: '[]\n' },
-      'custom-bundle': { patch: '[]\n' },
     })
     const home = tmp()
     const stock = resolveProfileDir('headless', home)
-    initProfile(stock, [
-      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless',
-    ])
-    const retiredManifest = readProfileManifest('t', stock)
-    writeProfileManifest(stock, retiredManifest)
+    mkdirSync(stock, { recursive: true })
+    // A profile created before the manifest carried the installation marker.
+    writeProfileManifest(stock, {
+      name: 'dsh-profile-headless',
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'] } },
+    })
     loadProfile('t', 'headless', anchor, home)
     expect(readProfileManifest('t', stock).dsh?.profile).toEqual({
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+      installationBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
     })
+  })
 
-    const customHome = tmp()
-    const custom = resolveProfileDir('headless', customHome)
-    initProfile(custom, [
-      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
-    ])
-    loadProfile('t', 'headless', anchor, customHome)
-    expect(readProfileManifest('t', custom).dsh?.profile?.bundles).toEqual([
-      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless', 'custom-bundle',
-    ])
+  it('keeps following the shipped template after the first upgrade', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+      'dsh-mcp-manager-plus': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('web', home)
+    mkdirSync(dir, { recursive: true })
+    // What the previous release shipped: two layers, recorded as the installation-owned list.
+    // The current template adds a third, so this is the second upgrade a profile can see.
+    writeProfileManifest(dir, {
+      name: 'dsh-profile-web',
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'], installationBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+    })
+    loadProfile('t', 'web', anchor, home)
+    expect(readProfileManifest('t', dir).dsh?.profile).toEqual({
+      bundles: [...PROFILE_TEMPLATES.web?.bundles ?? []],
+      installationBundles: [...PROFILE_TEMPLATES.web?.bundles ?? []],
+    })
+  })
+
+  it('adopts a profile that already lists the shipped template', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-headless': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('headless', home)
+    mkdirSync(dir, { recursive: true })
+    // No marker, and the list a previous manual install happened to leave equal to the template.
+    writeProfileManifest(dir, {
+      name: 'dsh-profile-headless',
+      dsh: { profile: { bundles: [...PROFILE_TEMPLATES.headless?.bundles ?? []] } },
+    })
+    loadProfile('t', 'headless', anchor, home)
+    expect(readProfileManifest('t', dir).dsh?.profile).toEqual({
+      bundles: [...PROFILE_TEMPLATES.headless?.bundles ?? []],
+      installationBundles: [...PROFILE_TEMPLATES.headless?.bundles ?? []],
+    })
+  })
+
+  it('leaves a bundle list the profile owner edited alone', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-headless': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('headless', home)
+    initProfile(dir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'])
+    const manifest = readProfileManifest('t', dir)
+    // Disabling a template bundle is an edit the next release must not revert.
+    writeProfileManifest(dir, {
+      ...manifest,
+      dsh: { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    loadProfile('t', 'headless', anchor, home)
+    expect(readProfileManifest('t', dir).dsh?.profile).toEqual({
+      bundles: ['@deepseek-ai/dsh-base'],
+      installationBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+    })
   })
 
   it('removes a retired bundle from an application-owned profile and keeps the rest of the manifest', () => {

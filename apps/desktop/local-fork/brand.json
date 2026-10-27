@@ -1,0 +1,32 @@
+{
+  "productName": "XiaoGuang Agent",
+  "slug": "xiaoguang-agent",
+  "appId": "com.xiaoguang.agent",
+  "companyName": "XiaoGuang",
+  "description": "XiaoGuang Agent 桌面客户端",
+  "mark": {
+    "width": 30,
+    "height": 24,
+    "radius": 11.5,
+    "innerRatio": 0.06,
+    "lobePower": 3.2,
+    "samples": 120
+  },
+  "heroHeadline": {
+    "zh": "与光同行",
+    "en": "Walk Toward the Light",
+    "ja": "光とともに",
+    "es": "Caminando hacia la luz",
+    "fr": "Vers la lumière",
+    "de": "Dem Licht entgegen",
+    "ru": "Навстречу свету",
+    "pt": "Caminhando para a luz"
+  },
+  "heroBadge": "",
+  "updateOrigin": "https://update.intranet.example",
+  "loginOrigin": "https://login.intranet.example",
+  "replaceNames": [
+    "DeepSeek Harness",
+    "XiaoGuang Agent"
+  ]
+}

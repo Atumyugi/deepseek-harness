@@ -58,6 +58,7 @@ export {
   composeEntries,
   createRuntimeResolution,
   ProfileRuntimeResolution,
+  alignInstallationOwnedBundles,
   bundlePatchFiles,
   bundlePatchPaths,
   initProfile,

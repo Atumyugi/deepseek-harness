@@ -1,11 +1,11 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
-  "description": "Electron desktop shell for a bundled dsh runtime and external plugins",
+  "description": "XiaoGuang Agent 桌面客户端",
   "version": "0.2.1-rc.3",
   "private": true,
   "license": "MIT",
   "author": {
-    "name": "Hangzhou DeepSeek Artificial Intelligence Co., Ltd."
+    "name": "XiaoGuang"
   },
   "type": "module",
   "main": "lib/main.js",
@@ -85,5 +85,6 @@
     "@deepseek-ai/dsh-atomic-write": "workspace:*",
     "@deepseek-ai/dsh-client-product-analytics": "workspace:*",
     "@deepseek-ai/dsh-util-file-drag": "workspace:*"
-  }
+  },
+  "productName": "XiaoGuang Agent"
 }

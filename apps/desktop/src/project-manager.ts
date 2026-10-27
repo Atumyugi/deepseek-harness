@@ -22,13 +22,19 @@ import {
 import type { DesktopPaths } from './paths.ts'
 import type { DesktopRelease } from './release.ts'
 import { readDesktopRuntime } from './runtime-tree.ts'
-import { initProfile, removeLinkProjections, sanitizeProfile } from '@deepseek-ai/dsh-app-boot'
-import { PROFILE_TEMPLATES, type ProfileTemplate } from '@deepseek-ai/dsh-official-bundles'
+import { alignInstallationOwnedBundles, initProfile, removeLinkProjections, sanitizeProfile } from '@deepseek-ai/dsh-app-boot'
+import {
+  INSTALLATION_OWNED_PROFILE_TUPLES,
+  PROFILE_TEMPLATES,
+  type ProfileTemplate,
+} from '@deepseek-ai/dsh-official-bundles'
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const CORE_BUILD_PACKAGE = '@deepseek-ai/dsh-subprocess-local'
 const WEB_PROFILE = PROFILE_TEMPLATES.web as ProfileTemplate
+/** The bundle list releases before the profile carried a marker wrote into `profiles/desktop`. */
+const WEB_PROFILE_LEGACY_BUNDLES = INSTALLATION_OWNED_PROFILE_TUPLES.web
 const WORKSPACE_SETTINGS = 'nodeLinker: hoisted\nautoInstallPeers: false\n'
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, undefined, 2)}\n`, { mode: 0o600 })
@@ -85,6 +91,11 @@ export class DesktopProjectManager {
       readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
       createPluginProfile(this.paths.profile)
+      // A machine that already ran an older release keeps its manifest: initProfile never rewrites
+      // one, and `profiles/desktop` has no PROFILE_TEMPLATES entry for the Host to normalize. Align
+      // it here so a bundle this release adds by default reaches existing installations, while a
+      // list the person edited stays untouched.
+      alignInstallationOwnedBundles(this.paths.profile, WEB_PROFILE.bundles, WEB_PROFILE_LEGACY_BUNDLES)
       removeLinkProjections(this.paths.profile)
     })
   }

@@ -5,9 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveDesktopPaths } from '../src/paths.ts'
 import { DesktopProjectManager } from '../src/project-manager.ts'
 import { readProfilePlugins } from '@deepseek-ai/dsh-app-boot'
+import { INSTALLATION_OWNED_PROFILE_TUPLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import { runtimeFixture } from './runtime-fixture.ts'
 
 const roots: string[] = []
+/** The bundles the desktop profile follows, and the tuple the release before the marker wrote.
+ * `official-bundles.spec.ts` asserts both entries exist, so the assertion keeps them in one place;
+ * a missing entry then fails this file at import instead of at each use.
+ */
+const WEB_BUNDLES = PROFILE_TEMPLATES.web!.bundles
+const LEGACY_WEB_BUNDLES = INSTALLATION_OWNED_PROFILE_TUPLES.web!
 function temporaryRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-test-'))
   roots.push(root)
@@ -43,6 +50,45 @@ afterEach(() => {
 })
 
 describe('desktop external plugin profile', () => {
+  it('upgrades a profile an earlier release created to the bundles this release ships', async () => {
+    const { manager } = setup()
+    const profile = manager.paths.profile
+    mkdirSync(profile, { recursive: true })
+    // The shape an older desktop release left behind: no marker, and the exact tuple it wrote.
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: [...LEGACY_WEB_BUNDLES] } },
+    }))
+    await manager.applyRelease()
+    const manifest = JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')) as {
+      dsh: { profile: { bundles: string[]; installationBundles: string[] } }
+    }
+    expect(manifest.dsh.profile.bundles).toEqual([...WEB_BUNDLES])
+    // The marker moves to what this release shipped, so the next release can upgrade again.
+    expect(manifest.dsh.profile.installationBundles).toEqual([...WEB_BUNDLES])
+  })
+
+  it('leaves a bundle list the person edited untouched', async () => {
+    const { manager } = setup()
+    const profile = manager.paths.profile
+    mkdirSync(profile, { recursive: true })
+    const edited = [...WEB_BUNDLES, 'someone-elses-bundle']
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-desktop',
+      private: true,
+      dependencies: {},
+      dsh: { profile: { bundles: edited } },
+    }))
+    await manager.applyRelease()
+    const manifest = JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')) as {
+      dsh: { profile: { bundles: string[]; installationBundles?: string[] } }
+    }
+    expect(manifest.dsh.profile.bundles).toEqual(edited)
+    expect(manifest.dsh.profile.installationBundles).toBeUndefined()
+  })
+
   it('preserves installed packages, profile state, and the lockfile when preparing a launch', async () => {
     const { manager } = setup()
     await manager.applyRelease()

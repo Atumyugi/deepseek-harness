@@ -79,6 +79,14 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
   /** Ordered bundle layer list, using installed package names. */
   bundles?: string[]
+  /**
+   * The bundle list the installation itself last wrote into this profile. A later release
+   * replaces `bundles` with its shipped template only while the two still match, so a
+   * person's enable/disable choices survive an in-place upgrade while a profile nobody
+   * touched picks up every bundle the new release adds. Profiles older than this field fall
+   * back to the exact tuples in `INSTALLATION_OWNED_PROFILE_TUPLES`.
+   */
+  installationBundles?: string[]
 }
 
 /** Client module declaration read by client-modules and the client build. */

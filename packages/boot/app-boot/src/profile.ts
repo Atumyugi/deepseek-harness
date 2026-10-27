@@ -201,11 +201,13 @@ export function initProfile(
   mkdirSync(dir, { recursive: true })
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath)) {
+    // Record what the installation handed out, so a later release can tell this list apart
+    // from one the person edited and only upgrade the former.
     const manifest: ProfileManifest & { private: boolean } = {
       name: `dsh-profile-${basename(dir)}`,
       private: true,
       dependencies: {},
-      dsh: { profile: { bundles: [...bundles] } },
+      dsh: { profile: { bundles: [...bundles], installationBundles: [...bundles] } },
     }
     writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n')
   }
@@ -588,20 +590,101 @@ function withBundles(manifest: ProfileManifest, bundles: readonly string[]): Pro
   }
 }
 
+/** Return `manifest` with `dsh.profile.installationBundles` replaced, preserving all other fields. */
+function withInstallationBundles(manifest: ProfileManifest, bundles: readonly string[]): ProfileManifest {
+  return {
+    ...manifest,
+    dsh: {
+      ...manifest.dsh,
+      profile: {
+        ...manifest.dsh?.profile,
+        installationBundles: [...bundles],
+      },
+    },
+  }
+}
+
 /**
- * Normalize an exact installation-owned bundle tuple to its shipped template,
- * preserving all other manifest fields. Other bundle lists remain untouched.
+ * Decide the manifest an installation-owned bundle list upgrades to, or `undefined` when the
+ * profile owner changed the list and it must stay untouched.
+ *
+ * Ownership comes from the `installationBundles` marker {@link initProfile} writes: while
+ * `bundles` still equals what the installation handed out, the profile was not edited and may
+ * be upgraded to the current template. That keeps working release after release, because the
+ * marker moves forward with the template each time. Profiles created before the marker existed
+ * have nothing but the exact tuple an earlier release wrote, so they fall back to the `legacy`
+ * tuple; without the marker there is no way to tell "never edited" from "edited back to the old
+ * list", so an edit there is only honoured once the list has left the tuple.
+ * @param manifest - the profile manifest read from disk.
+ * @param template - the bundle list this release ships for the profile.
+ * @param legacy - the exact list an earlier release wrote before the marker existed.
+ * @returns the manifest to persist, or `undefined` to leave the file untouched.
+ */
+function nextInstallationOwnedManifest(
+  manifest: ProfileManifest,
+  template: readonly string[],
+  legacy: readonly string[] | undefined,
+): ProfileManifest | undefined {
+  const profile = manifest.dsh?.profile
+  const bundles = profile?.bundles
+  if (bundles === undefined) return undefined
+  const owned: readonly string[] | undefined = profile?.installationBundles
+  const untouched = owned === undefined
+    // A profile that already lists exactly the template is adopted by writing the marker, so it
+    // joins the upgrade path from the next release on instead of staying stuck on the legacy check.
+    ? (legacy !== undefined && sameBundles(bundles, legacy)) || sameBundles(bundles, template)
+    : sameBundles(bundles, owned)
+  if (!untouched) return undefined
+  if (sameBundles(bundles, template) && owned !== undefined && sameBundles(owned, template)) {
+    return undefined
+  }
+  // The marker moves to the new template even when only it had to change, so the next release
+  // compares against what this one shipped.
+  return sameBundles(bundles, template)
+    ? withInstallationBundles(manifest, template)
+    : withInstallationBundles(withBundles(manifest, template), template)
+}
+
+/**
+ * Align one bundle list with the template this release ships for it.
+ * @param name - the profile template name.
+ * @param dir - the profile directory.
+ * @param manifest - the manifest read from that directory.
+ * @returns the manifest to use, after a rewrite when the list was installation-owned.
  */
 function normalizeShippedProfile(name: string, dir: string, manifest: ProfileManifest): ProfileManifest {
-  const installationOwned = INSTALLATION_OWNED_PROFILE_TUPLES[name]
   const template = PROFILE_TEMPLATES[name]
-  const bundles = manifest.dsh?.profile?.bundles
-  if (template === undefined || bundles === undefined) return manifest
-  const isRetiredTuple = installationOwned !== undefined && sameBundles(bundles, installationOwned)
-  if (!isRetiredTuple) return manifest
-  const normalized = withBundles(manifest, template.bundles)
-  writeProfileManifest(dir, normalized)
-  return normalized
+  if (template === undefined) return manifest
+  const next = nextInstallationOwnedManifest(manifest, template.bundles, INSTALLATION_OWNED_PROFILE_TUPLES[name])
+  if (next === undefined) return manifest
+  writeProfileManifest(dir, next)
+  return next
+}
+
+/**
+ * Upgrade a profile directory the installation owns to the bundles this release ships, writing the
+ * manifest only while it still equals what an earlier release handed out.
+ *
+ * Desktop keeps its profile at `profiles/desktop`, a name with no {@link PROFILE_TEMPLATES} entry,
+ * so {@link normalizeShippedProfile} never reaches it. This entry point lets the Electron shell
+ * apply the same rule to that directory, which is what carries a newly shipped bundle to machines
+ * that already ran an older release.
+ * @param dir - the profile directory; an absent manifest is not an error.
+ * @param template - the bundle list this release ships for that directory.
+ * @param legacy - the exact list an earlier release wrote before the marker existed.
+ * @returns whether the manifest was rewritten.
+ */
+export function alignInstallationOwnedBundles(
+  dir: string,
+  template: readonly string[],
+  legacy?: readonly string[],
+): boolean {
+  if (!existsSync(join(dir, 'package.json'))) return false
+  const manifest = readProfileManifest('dsh', dir)
+  const next = nextInstallationOwnedManifest(manifest, template, legacy)
+  if (next === undefined) return false
+  writeProfileManifest(dir, next)
+  return true
 }
 
 /**

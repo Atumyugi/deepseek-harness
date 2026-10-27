@@ -2,7 +2,7 @@
 
 import { existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import { PROFILE_PATCH_FILENAME, readProfileManifest } from './profile.ts'
+import { PROFILE_PATCH_FILENAME, readProfileManifest, writeProfileManifest } from './profile.ts'
 import { writeProfileBundles } from './profile-plugins.ts'
 
 /**
@@ -29,6 +29,17 @@ export function sanitizeProfile(binName: string, profileDir: string, bundles: re
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
     backupPath = undefined
   }
-  if (manifest !== undefined) writeProfileBundles(profileDir, manifest, bundles)
+  if (manifest !== undefined) {
+    // Recovery hands the profile back to the installation, so the ownership marker moves with
+    // the recovered list and later releases keep upgrading it.
+    const recovered = writeProfileBundles(profileDir, manifest, bundles)
+    writeProfileManifest(profileDir, {
+      ...recovered,
+      dsh: {
+        ...recovered.dsh,
+        profile: { ...recovered.dsh?.profile, installationBundles: [...bundles] },
+      },
+    })
+  }
   return backupPath
 }

@@ -12,7 +12,7 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
   },
   web: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'dsh-mcp-manager-plus'],
   },
   headless: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
@@ -26,11 +26,19 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
 }
 
 /**
- * Installation-owned bundle tuples that an earlier release wrote into a shipped profile; app-boot replaces an exact
- * match with the {@link PROFILE_TEMPLATES} entry of the same name and leaves every other list untouched.
+ * Bundle tuples an earlier release wrote into a shipped profile before the manifest carried
+ * `dsh.profile.installationBundles`. app-boot replaces an exact match with the
+ * {@link PROFILE_TEMPLATES} entry of the same name and leaves every other list untouched.
+ *
+ * Releases that ship the marker need no entry here: the marker records what the installation
+ * handed out, so a profile nobody edited keeps following the template across every upgrade,
+ * however many bundles later releases add.
  */
 export const INSTALLATION_OWNED_PROFILE_TUPLES: Readonly<Record<string, readonly string[]>> = {
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
+  // Releases before the bundle list carried a Desktop-only bundle wrote this tuple, so a profile they created keeps
+  // the new template bundles (including that bundle) after an in-place upgrade instead of silently dropping them.
+  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
 }
 
 /** Bundles an earlier release shipped and the installation no longer carries; app-boot removes them from profiles. */

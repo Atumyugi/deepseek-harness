@@ -4,7 +4,7 @@ import { resolveMacOSSignatureCacheDirectory } from './macos-signature-cache-dir
 import { packagingStep } from './packaging-step.mjs'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, relative, resolve } from 'node:path'
 import { desktopNodeEnvironment } from '../src/node-environment.ts'
@@ -67,6 +67,41 @@ function desktopRelease(): DesktopRelease {
     nodeVersion: runtime.node,
     pnpmVersion: runtime.pnpm,
   })
+}
+
+/**
+ * Bundle patches the published CLI installs as its own dependency reach the runtime tree without being named by the
+ * workspace package set, which lists only the repository's own packages. The runtime manifest still has to declare
+ * them: the plugin manager reports a bundle as installation-provided — listed even when no profile selects it, and
+ * protected from removal — exactly when that manifest names it. Each returned version is the installed one, so the
+ * manifest keeps describing what actually ships.
+ */
+function installationBundleDependencies(modules: string, declared: ReadonlySet<string>): Record<string, string> {
+  const dependencies: Record<string, string> = {}
+  const inspect = (directory: string): void => {
+    const manifestPath = join(directory, 'package.json')
+    if (!existsSync(manifestPath)) return
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      name?: unknown
+      version?: unknown
+      dsh?: { bundle?: { patch?: unknown } }
+    }
+    if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') return
+    if (declared.has(manifest.name) || manifest.dsh?.bundle?.patch === undefined) return
+    dependencies[manifest.name] = manifest.version
+  }
+  for (const entry of readdirSync(modules, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+    if (!entry.name.startsWith('@')) {
+      inspect(join(modules, entry.name))
+      continue
+    }
+    const scope = join(modules, entry.name)
+    for (const child of readdirSync(scope, { withFileTypes: true })) {
+      if (child.isDirectory()) inspect(join(scope, child.name))
+    }
+  }
+  return dependencies
 }
 
 function runPnpm(args: readonly string[]): Promise<void> {
@@ -151,9 +186,13 @@ async function main(): Promise<void> {
         filter: source => desktopRuntimeFileExclusion(relative(modules, source), target, officeEngine) === undefined,
       })
     })
+    const declaredNames = new Set(packageSet.packages.map(entry => entry.name))
     writeFileSync(join(DSH_OUTPUT_ROOT, 'package.json'), `${JSON.stringify({
       name: '@deepseek-ai/dsh-desktop-runtime', private: true, version: release.version, type: 'module',
-      dependencies: Object.fromEntries(packageSet.packages.map(entry => [entry.name, entry.version])),
+      dependencies: {
+        ...Object.fromEntries(packageSet.packages.map(entry => [entry.name, entry.version])),
+        ...installationBundleDependencies(join(DSH_OUTPUT_ROOT, 'node_modules'), declaredNames),
+      },
     }, undefined, 2)}\n`)
     for (const file of DESKTOP_HOST_RUNTIME_FILES) {
       if (!existsSync(join(DSH_OUTPUT_ROOT, 'node_modules', DESKTOP_HOST_PACKAGE, file))) {

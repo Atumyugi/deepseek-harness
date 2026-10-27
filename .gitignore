@@ -47,3 +47,7 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+# Local WorkBuddy project state (agent memory logs), never part of the product.
+.workbuddy/
+# Local packaging logs written by apps/desktop/local-fork/build-win.ps1.
+apps/desktop/local-fork/*.log
